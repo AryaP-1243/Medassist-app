@@ -1,14 +1,14 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
+    <meta charset="UTF-8" />
     <title>🩺 MedAssist - Global Health AI</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.5.1/dist/confetti.browser.min.js"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-    <link rel="stylesheet" href="assets/style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="assets/style.css" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
 </head>
 <body>
 
@@ -22,14 +22,16 @@
 
 <div class="container">
     <h1><i class="fa-solid fa-heart-pulse"></i> MedAssist</h1>
+
     <div id="foodHistorySection" style="display:none;">
         <h3>Welcome! Please enter your recent food history to begin.</h3>
-        <textarea id="foodHistoryInput" placeholder="e.g., I had salad for lunch, pasta for dinner..."></textarea>
+        <textarea id="foodHistoryInput" placeholder="e.g., I had vegetables, chicken, and rice..."></textarea>
         <button id="submitFoodHistory">Calculate Health Score</button>
     </div>
+
     <div id="appSection" style="display:none;">
         <div id="healthScore"></div>
-        <textarea id="input" placeholder="e.g., Tell me about Aspirin or I have a fever"></textarea>
+        <textarea id="input" placeholder="e.g., Tell me about Aspirin or I have a headache"></textarea>
         <div class="type-selection">
             <button id="medicineTypeBtn" class="type-button active" data-type="medicine">💊 Medicine</button>
             <button id="symptomTypeBtn" class="type-button" data-type="symptom">🩺 Symptom</button>
@@ -38,7 +40,7 @@
             <button id="getInsightsBtn">Get Insights</button>
             <button id="voiceInputBtn">🎤 Voice Input</button>
         </div>
-        <div id="output" style="margin-top:20px;">Your insights will appear here 📝</div>
+        <div id="output">Your insights will appear here 📝</div>
     </div>
 </div>
 
@@ -57,9 +59,10 @@
         appId: "1:269618123844:web:6a25b8b4d914739297d811"
     };
 
+    const BACKEND_URL = "https://medassist-backend-if53.onrender.com";
     const app = initializeApp(firebaseConfig);
     const auth = getAuth(app);
-    const BACKEND_URL = "https://medassist-backend-if53.onrender.com";
+
     let userUID = '', currentIdToken = '', currentType = 'medicine';
 
     const ui = {
@@ -86,10 +89,13 @@
         ui.symptomTypeBtn.classList.toggle('active', t === 'symptom');
     };
 
-    const updateHistory = (h) => {
+    const updateHistory = (historyData) => {
         ui.history.innerHTML = "";
-        if (!h || h.length === 0) { ui.history.innerHTML = "No history yet."; return; }
-        const unique = [...new Map(h.filter(i => i.role === 'user').map(i => [i.content, i])).values()];
+        if (!historyData || historyData.length === 0) {
+            ui.history.innerHTML = "No history yet.";
+            return;
+        }
+        const unique = [...new Map(historyData.filter(i => i.role === 'user').map(i => [i.content, i])).values()];
         unique.slice(-5).reverse().forEach(item => {
             const div = document.createElement('div');
             div.className = 'history-item';
@@ -99,22 +105,24 @@
             ui.history.appendChild(div);
         });
     };
-    
+
     const handleLogin = async (user) => {
         userUID = user.uid;
         ui.userDisplay.innerText = user.email;
         ui.sidebar.style.display = 'flex';
-        currentIdToken = await user.getIdToken(true); // Force refresh
+        currentIdToken = await user.getIdToken(true);
+
         try {
             const res = await fetch(`${BACKEND_URL}/user/profile`, {
-                method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${currentIdToken}` },
+                method: "POST",
+                headers: { "Content-Type": "application/json", "Authorization": `Bearer ${currentIdToken}` },
                 body: JSON.stringify({ uid: userUID })
             });
-            if (!res.ok) throw new Error((await res.json()).detail || 'Failed to fetch profile.');
+            if (!res.ok) throw new Error((await res.json()).detail || "Profile fetch failed.");
             const data = await res.json();
-            if (data.health_score != null) {
+            if (data.health_score !== null) {
                 ui.healthScore.innerHTML = `<b>Your Health Score: ${data.health_score}/100</b><br>${marked.parse(data.message || '')}`;
-                if(data.suggestions && data.suggestions.length > 0) {
+                if (data.suggestions && data.suggestions.length > 0) {
                     const ul = document.createElement('ul');
                     data.suggestions.forEach(s => { const li = document.createElement('li'); li.textContent = s; ul.appendChild(li); });
                     ui.healthScore.appendChild(ul);
@@ -128,25 +136,25 @@
                 ui.foodHistorySection.style.display = 'block';
             }
         } catch (error) {
-            console.error("Profile fetch failed:", error);
-            document.querySelector('.container').innerHTML = `<h1>Error Loading Profile</h1><p>There was a problem fetching your data. This can happen if the server is starting up. Please wait 30 seconds and refresh the page.</p><p><i>Error: ${error.message}</i></p>`;
+            document.querySelector('.container').innerHTML = `<h1>Error</h1><p>${error.message}</p>`;
         }
     };
 
     const submitFoodHistory = async () => {
-        const history = ui.foodHistoryInput.value.trim();
-        if (!history) return alert("Please enter your food history.");
+        const input = ui.foodHistoryInput.value.trim();
+        if (!input) return alert("Please enter your food history.");
         ui.submitFoodHistoryBtn.disabled = true;
         ui.submitFoodHistoryBtn.textContent = "Calculating...";
         try {
             const res = await fetch(`${BACKEND_URL}/user/food-history`, {
-                method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${currentIdToken}` },
-                body: JSON.stringify({ food_history: history })
+                method: "POST",
+                headers: { "Content-Type": "application/json", "Authorization": `Bearer ${currentIdToken}` },
+                body: JSON.stringify({ food_history: input })
             });
-            if (!res.ok) throw new Error((await res.json()).detail || "Failed to calculate health score.");
+            if (!res.ok) throw new Error((await res.json()).detail || "Failed to calculate.");
             await handleLogin(auth.currentUser);
         } catch (error) {
-            alert("Error submitting food history: " + error.message);
+            alert(error.message);
         } finally {
             ui.submitFoodHistoryBtn.disabled = false;
             ui.submitFoodHistoryBtn.textContent = "Calculate Health Score";
@@ -159,40 +167,34 @@
         ui.output.innerHTML = "⏳ Generating...";
         try {
             const res = await fetch(`${BACKEND_URL}/ask`, {
-                method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${currentIdToken}` },
+                method: "POST",
+                headers: { "Content-Type": "application/json", "Authorization": `Bearer ${currentIdToken}` },
                 body: JSON.stringify({ message: query, type: currentType })
             });
-            if (!res.ok) throw new Error((await res.json()).detail || 'API Error.');
+            if (!res.ok) throw new Error((await res.json()).detail || "Error generating insights.");
             const data = await res.json();
             ui.output.innerHTML = marked.parse(data.response);
             updateHistory(data.chat_history);
-        } catch(error) {
-            console.error("Ask function failed:", error);
+        } catch (error) {
             ui.output.innerHTML = `Error: ${error.message}`;
         }
     };
-    
+
     const deleteChat = async (content) => {
-        if (!confirm("Are you sure?")) return;
-        try {
-            const res = await fetch(`${BACKEND_URL}/user/chat-history/delete`, {
-                method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${currentIdToken}` },
-                body: JSON.stringify({ content })
-            });
-            if (!res.ok) throw new Error((await res.json()).detail || 'Failed to delete history.');
-            const data = await res.json();
-            updateHistory(data.chat_history);
-        } catch(error) {
-            console.error("Delete chat failed:", error);
-            alert(`Error: ${error.message}`);
-        }
+        if (!confirm("Delete this chat?")) return;
+        await fetch(`${BACKEND_URL}/user/chat-history/delete`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "Authorization": `Bearer ${currentIdToken}` },
+            body: JSON.stringify({ content })
+        });
+        await handleLogin(auth.currentUser);
     };
-    
+
     ui.submitFoodHistoryBtn.onclick = submitFoodHistory;
     ui.getInsightsBtn.onclick = ask;
     ui.voiceInputBtn.onclick = () => {
         const Rec = window.SpeechRecognition || window.webkitSpeechRecognition;
-        if(!Rec) return alert("Sorry, voice recognition is not supported in your browser.");
+        if (!Rec) return alert("Voice input not supported.");
         const rec = new Rec();
         rec.onresult = e => { ui.input.value = e.results[0][0].transcript; ask(); };
         rec.start();
@@ -202,19 +204,8 @@
     ui.logoutButton.onclick = () => signOut(auth);
 
     onAuthStateChanged(auth, user => {
-        if (user) {
-            handleLogin(user);
-        } else {
-            ui.sidebar.style.display = 'none';
-            ui.foodHistorySection.style.display = 'none';
-            ui.appSection.style.display = 'none';
-            signInWithPopup(auth, new GoogleAuthProvider()).catch(error => {
-                if (error.code !== 'auth/popup-closed-by-user') {
-                    console.error("Google Sign-in error:", error);
-                    document.querySelector('.container').innerHTML = '<h1>Sign In Failed</h1><p>Please refresh the page to try again.</p>';
-                }
-            });
-        }
+        if (user) handleLogin(user);
+        else signInWithPopup(auth, new GoogleAuthProvider());
     });
 </script>
 
