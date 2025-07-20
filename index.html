@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>🩺 MedAssist - Global Health AI</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.5.1/dist/confetti.browser.min.js"></script>
+
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    
+    <link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+<div id="sidebar" style="display:none;">
+    <h3><i class="fa-solid fa-clock-rotate-left"></i> History</h3>
+    <div id="history">Your previous queries will appear here.</div>
+    <hr>
+    <strong><i class="fa-solid fa-user"></i> User:</strong> <span id="userDisplay">Not logged in</span>
+    <button id="logoutButton">Logout</button>
+</div>
+
+<div class="container">
+    <h1><i class="fa-solid fa-heart-pulse"></i> MedAssist</h1>
+
+    <div id="foodHistorySection" style="display:none;">
+        <h3>Welcome! Please enter your recent food history to begin.</h3>
+        <textarea id="foodHistoryInput" placeholder="e.g., I had salad for lunch, pasta for dinner..."></textarea>
+        <button id="submitFoodHistory">Calculate Health Score</button>
+    </div>
+
+    <div id="appSection" style="display:none;">
+        <div id="healthScore"></div>
+        <textarea id="input" placeholder="e.g., Tell me about Aspirin or I have a fever"></textarea>
+        <div class="type-selection">
+            <button id="medicineTypeBtn" class="type-button active" data-type="medicine">💊 Medicine</button>
+            <button id="symptomTypeBtn" class="type-button" data-type="symptom">🩺 Symptom</button>
+        </div>
+        <div class="button-group">
+            <button id="getInsightsBtn">Get Insights</button>
+            <button id="voiceInputBtn">Voice Input</button>
+        </div>
+        <div id="output" style="margin-top:20px;">Your insights will appear here 📝</div>
+    </div>
+</div>
+
+<footer>&copy; 2025 MedAssist | Built with ❤️</footer>
+
+<script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+    import { getAuth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+
+    const firebaseConfig = {
+        apiKey: "AIzaSyCtx67-taPpAyzu4-TTIQXvbdQOB2Wmvrs",
+        authDomain: "medassistmain.firebaseapp.com",
+        projectId: "medassistmain",
+        storageBucket: "medassistmain.appspot.com",
+        messagingSenderId: "269618123844",
+        appId: "1:269618123844:web:6a25b8b4d914739297d811"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const BACKEND_URL = "https://medassist-backend-if53.onrender.com";
+    let userUID = '', currentIdToken = '', currentType = 'medicine';
+
+    const ui = {
+        sidebar: document.getElementById('sidebar'),
+        userDisplay: document.getElementById('userDisplay'),
+        logoutButton: document.getElementById('logoutButton'),
+        history: document.getElementById('history'),
+        foodHistorySection: document.getElementById('foodHistorySection'),
+        foodHistoryInput: document.getElementById('foodHistoryInput'),
+        submitFoodHistoryBtn: document.getElementById('submitFoodHistory'),
+        appSection: document.getElementById('appSection'),
+        healthScore: document.getElementById('healthScore'),
+        input: document.getElementById('input'),
+        output: document.getElementById('output'),
+        medicineTypeBtn: document.getElementById('medicineTypeBtn'),
+        symptomTypeBtn: document.getElementById('symptomTypeBtn'),
+        getInsightsBtn: document.getElementById('getInsightsBtn'),
+        voiceInputBtn: document.getElementById('voiceInputBtn'),
+    };
+
+    const setType = (t) => {
+        currentType = t;
+        ui.medicineTypeBtn.classList.toggle('active', t === 'medicine');
+        ui.symptomTypeBtn.classList.toggle('active', t === 'symptom');
+    };
+
+    const updateHistory = (h) => {
+        ui.history.innerHTML = "";
+        if (!h || h.length === 0) { ui.history.innerHTML = "No history yet."; return; }
+        const uniqueUserQueries = [...new Map(h.filter(i => i.role === 'user').map(i => [i.content, i])).values()];
+        uniqueUserQueries.slice(-5).reverse().forEach(item => {
+            const div = document.createElement('div');
+            div.className = 'history-item';
+            div.innerHTML = `<span>${item.type === "medicine" ? "💊" : "🩺"} ${item.content}</span><button class="delete-btn"><i class="fa fa-trash"></i></button>`;
+            div.querySelector('span').onclick = () => { ui.input.value = item.content; setType(item.type); ask(); };
+            div.querySelector('.delete-btn').onclick = (e) => { e.stopPropagation(); deleteChat(item.content); };
+            ui.history.appendChild(div);
+        });
+    };
+    
+    const handleLogin = async (user) => {
+        userUID = user.uid;
+        ui.userDisplay.innerText = user.email;
+        ui.sidebar.style.display = 'block';
+        currentIdToken = await user.getIdToken();
+
+        try {
+            const res = await fetch(`${BACKEND_URL}/user/profile`, {
+                method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${currentIdToken}` },
+                body: JSON.stringify({ uid: userUID })
+            });
+            if (!res.ok) throw new Error((await res.json()).detail || 'Failed to fetch profile.');
+            
+            const data = await res.json();
+            
+            if (data.health_score != null) {
+                ui.healthScore.innerHTML = `<b>Your Health Score: ${data.health_score}/100</b><br>${marked.parse(data.message || '')}`;
+                if (data.health_score >= 80) confetti({ particleCount: 150, spread: 90, origin: { y: 0.6 } });
+                updateHistory(data.chat_history || []);
+                ui.foodHistorySection.style.display = 'none';
+                ui.appSection.style.display = 'block';
+            } else {
+                ui.appSection.style.display = 'none';
+                ui.foodHistorySection.style.display = 'block';
+            }
+        } catch(error) {
+            console.error("Login/Profile fetch failed:", error);
+            alert("Could not load your profile. Please try refreshing the page.");
+        }
+    };
+
+    const submitFoodHistory = async () => {
+        const foodHistory = ui.foodHistoryInput.value.trim();
+        if (!foodHistory) return alert("Please enter your food history.");
+        ui.submitFoodHistoryBtn.disabled = true;
+        ui.submitFoodHistoryBtn.textContent = "Calculating...";
+        try {
+            const res = await fetch(`${BACKEND_URL}/user/food-history`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${currentIdToken}` },
+                body: JSON.stringify({ food_history: foodHistory })
+            });
+            if (!res.ok) throw new Error((await res.json()).detail || 'Failed to calculate score.');
+            
+            await handleLogin(auth.currentUser);
+        } catch(error) {
+            console.error("Food history submission failed:", error);
+            alert(`Error: ${error.message}`);
+        } finally {
+            ui.submitFoodHistoryBtn.disabled = false;
+            ui.submitFoodHistoryBtn.textContent = "Calculate Health Score";
+        }
+    };
+
+    const ask = async () => {
+        const query = ui.input.value.trim();
+        if (!query) return alert("Please enter your query.");
+        ui.output.innerHTML = "⏳ Generating...";
+        try {
+            const res = await fetch(`${BACKEND_URL}/ask`, {
+                method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${currentIdToken}` },
+                body: JSON.stringify({ message: query, type: currentType })
+            });
+            if (!res.ok) throw new Error((await res.json()).detail || 'API Error.');
+            const data = await res.json();
+            ui.output.innerHTML = marked.parse(data.response);
+            updateHistory(data.chat_history);
+        } catch(error) {
+            console.error("Ask function failed:", error);
+            ui.output.innerHTML = `Error: ${error.message}`;
+        }
+    };
+    
+    const deleteChat = async (content) => {
+        if (!confirm("Are you sure you want to delete this from your history?")) return;
+        try {
+            const res = await fetch(`${BACKEND_URL}/user/chat-history/delete`, {
+                method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${currentIdToken}` },
+                body: JSON.stringify({ content })
+            });
+            if (!res.ok) throw new Error((await res.json()).detail || 'Failed to delete history item.');
+            
+            const data = await res.json();
+            updateHistory(data.chat_history); // Dynamically update history
+        } catch(error) {
+            console.error("Delete chat failed:", error);
+            alert(`Error: ${error.message}`);
+        }
+    };
+    
+    ui.submitFoodHistoryBtn.onclick = submitFoodHistory;
+    ui.getInsightsBtn.onclick = ask;
+    ui.voiceInputBtn.onclick = () => {
+        const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+        if(!SpeechRec) return alert("Sorry, voice recognition is not supported in your browser.");
+        const rec = new SpeechRec();
+        rec.onresult = e => { ui.input.value = e.results[0][0].transcript; ask(); };
+        rec.start();
+    };
+    ui.medicineTypeBtn.onclick = () => setType('medicine');
+    ui.symptomTypeBtn.onclick = () => setType('symptom');
+    ui.logoutButton.onclick = () => signOut(auth);
+
+    onAuthStateChanged(auth, user => {
+        if (user) {
+            handleLogin(user);
+        } else {
+            ui.sidebar.style.display = 'none';
+            ui.foodHistorySection.style.display = 'none';
+            ui.appSection.style.display = 'none';
+            signInWithPopup(auth, new GoogleAuthProvider()).catch(error => {
+                console.error("Google Sign-in popup error:", error);
+                // The container will show a simple message if the popup is closed or fails
+                document.querySelector('.container').innerHTML = '<h1>Please sign in to use MedAssist.</h1><p>Refresh the page to try again.</p>';
+            });
+        }
+    });
+</script>
+
+</body>
+</html>
