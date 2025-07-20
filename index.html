@@ -1,71 +1,14 @@
-k<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <title>🩺 MedAssist - Global Health AI</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.5.1/dist/confetti.browser.min.js"></script>
-
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-    
-    <style>
-        body {
-            font-family: 'Poppins', sans-serif;
-            background: linear-gradient(135deg, #6a11cb 0%, #2575fc 100%);
-            color: #333;
-            margin: 0; padding: 0;
-            display: flex;
-            height: 100vh;
-        }
-        .container {
-            background: #fff;
-            margin: auto;
-            padding: 30px;
-            border-radius: 20px;
-            box-shadow: 0 8px 30px rgba(0,0,0,0.1);
-            width: 50%;
-            min-width: 400px;
-            max-width: 700px;
-            margin-left: 350px; /* Shift right to avoid overlap */
-        }
-        #sidebar {
-            width: 300px;
-            background: #f7f7f7;
-            padding: 20px;
-            border-right: 1px solid #ddd;
-            box-shadow: 2px 0 5px rgba(0,0,0,0.05);
-            display: flex;
-            flex-direction: column;
-            position: absolute;
-            height: 100%;
-        }
-        .history-item {
-            display: flex; justify-content: space-between; align-items: center;
-            padding: 5px 0;
-        }
-        .delete-btn {
-            background: none; border: none; color: #e74c3c; cursor: pointer;
-        }
-        textarea {
-            width: 100%; height: 80px; padding: 10px; margin-top: 10px; border-radius: 10px; border: 1px solid #ccc;
-        }
-        button {
-            padding: 10px 20px; margin-top: 10px; border: none; border-radius: 10px; cursor: pointer;
-            background: #2575fc; color: white; font-weight: 600;
-        }
-        .type-button {
-            margin-right: 10px; padding: 8px 15px; border-radius: 8px; border: none; cursor: pointer;
-        }
-        .active {
-            background: #6a11cb; color: #fff;
-        }
-        footer {
-            position: fixed; bottom: 10px; width: 100%; text-align: center; color: #fff; font-size: 14px;
-        }
-    </style>
+    <link rel="stylesheet" href="assets/style.css">
 </head>
 <body>
 
@@ -74,24 +17,22 @@ k<!DOCTYPE html>
     <div id="history">Your previous queries will appear here.</div>
     <hr>
     <strong><i class="fa-solid fa-user"></i> User:</strong> <span id="userDisplay">Not logged in</span>
-    <button id="logoutButton" style="background:#e74c3c;margin-top:10px;">Logout</button>
+    <button id="logoutButton">Logout</button>
 </div>
 
 <div class="container">
     <h1><i class="fa-solid fa-heart-pulse"></i> MedAssist</h1>
-
     <div id="foodHistorySection" style="display:none;">
         <h3>Welcome! Please enter your recent food history to begin.</h3>
         <textarea id="foodHistoryInput" placeholder="e.g., I had salad for lunch, pasta for dinner..."></textarea>
         <button id="submitFoodHistory">Calculate Health Score</button>
     </div>
-
     <div id="appSection" style="display:none;">
         <div id="healthScore"></div>
         <textarea id="input" placeholder="e.g., Tell me about Aspirin or I have a fever"></textarea>
         <div class="type-selection">
-            <button id="medicineTypeBtn" class="type-button active">💊 Medicine</button>
-            <button id="symptomTypeBtn" class="type-button">🩺 Symptom</button>
+            <button id="medicineTypeBtn" class="type-button active" data-type="medicine">💊 Medicine</button>
+            <button id="symptomTypeBtn" class="type-button" data-type="symptom">🩺 Symptom</button>
         </div>
         <div class="button-group">
             <button id="getInsightsBtn">Get Insights</button>
@@ -119,8 +60,7 @@ k<!DOCTYPE html>
     const app = initializeApp(firebaseConfig);
     const auth = getAuth(app);
     const BACKEND_URL = "https://medassist-backend-if53.onrender.com";
-
-    let currentType = 'medicine', userUID = '', currentIdToken = '';
+    let userUID = '', currentIdToken = '', currentType = 'medicine';
 
     const ui = {
         sidebar: document.getElementById('sidebar'),
@@ -159,31 +99,37 @@ k<!DOCTYPE html>
             ui.history.appendChild(div);
         });
     };
-
+    
     const handleLogin = async (user) => {
         userUID = user.uid;
         ui.userDisplay.innerText = user.email;
         ui.sidebar.style.display = 'flex';
-        currentIdToken = await user.getIdToken();
+        currentIdToken = await user.getIdToken(true); // Force refresh
         try {
             const res = await fetch(`${BACKEND_URL}/user/profile`, {
                 method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${currentIdToken}` },
                 body: JSON.stringify({ uid: userUID })
             });
+            if (!res.ok) throw new Error((await res.json()).detail || 'Failed to fetch profile.');
             const data = await res.json();
             if (data.health_score != null) {
                 ui.healthScore.innerHTML = `<b>Your Health Score: ${data.health_score}/100</b><br>${marked.parse(data.message || '')}`;
+                if(data.suggestions && data.suggestions.length > 0) {
+                    const ul = document.createElement('ul');
+                    data.suggestions.forEach(s => { const li = document.createElement('li'); li.textContent = s; ul.appendChild(li); });
+                    ui.healthScore.appendChild(ul);
+                }
                 if (data.health_score >= 80) confetti({ particleCount: 150, spread: 90, origin: { y: 0.6 } });
                 updateHistory(data.chat_history || []);
                 ui.foodHistorySection.style.display = 'none';
                 ui.appSection.style.display = 'block';
             } else {
-                ui.foodHistorySection.style.display = 'block';
                 ui.appSection.style.display = 'none';
+                ui.foodHistorySection.style.display = 'block';
             }
         } catch (error) {
             console.error("Profile fetch failed:", error);
-            alert("Error loading profile. Try refreshing.");
+            document.querySelector('.container').innerHTML = `<h1>Error Loading Profile</h1><p>There was a problem fetching your data. This can happen if the server is starting up. Please wait 30 seconds and refresh the page.</p><p><i>Error: ${error.message}</i></p>`;
         }
     };
 
@@ -193,11 +139,11 @@ k<!DOCTYPE html>
         ui.submitFoodHistoryBtn.disabled = true;
         ui.submitFoodHistoryBtn.textContent = "Calculating...";
         try {
-            const response = await fetch(`${BACKEND_URL}/user/food-history`, {
+            const res = await fetch(`${BACKEND_URL}/user/food-history`, {
                 method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${currentIdToken}` },
                 body: JSON.stringify({ food_history: history })
             });
-            if (!response.ok) throw new Error((await response.json()).detail || "Failed to calculate health score.");
+            if (!res.ok) throw new Error((await res.json()).detail || "Failed to calculate health score.");
             await handleLogin(auth.currentUser);
         } catch (error) {
             alert("Error submitting food history: " + error.message);
@@ -211,28 +157,42 @@ k<!DOCTYPE html>
         const query = ui.input.value.trim();
         if (!query) return alert("Please enter your query.");
         ui.output.innerHTML = "⏳ Generating...";
-        const res = await fetch(`${BACKEND_URL}/ask`, {
-            method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${currentIdToken}` },
-            body: JSON.stringify({ message: query, type: currentType })
-        });
-        const data = await res.json();
-        ui.output.innerHTML = marked.parse(data.response);
-        updateHistory(data.chat_history);
-        ui.input.value = '';
+        try {
+            const res = await fetch(`${BACKEND_URL}/ask`, {
+                method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${currentIdToken}` },
+                body: JSON.stringify({ message: query, type: currentType })
+            });
+            if (!res.ok) throw new Error((await res.json()).detail || 'API Error.');
+            const data = await res.json();
+            ui.output.innerHTML = marked.parse(data.response);
+            updateHistory(data.chat_history);
+        } catch(error) {
+            console.error("Ask function failed:", error);
+            ui.output.innerHTML = `Error: ${error.message}`;
+        }
     };
-
+    
     const deleteChat = async (content) => {
-        await fetch(`${BACKEND_URL}/user/chat-history/delete`, {
-            method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${currentIdToken}` },
-            body: JSON.stringify({ content })
-        });
-        await handleLogin(auth.currentUser);
+        if (!confirm("Are you sure?")) return;
+        try {
+            const res = await fetch(`${BACKEND_URL}/user/chat-history/delete`, {
+                method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${currentIdToken}` },
+                body: JSON.stringify({ content })
+            });
+            if (!res.ok) throw new Error((await res.json()).detail || 'Failed to delete history.');
+            const data = await res.json();
+            updateHistory(data.chat_history);
+        } catch(error) {
+            console.error("Delete chat failed:", error);
+            alert(`Error: ${error.message}`);
+        }
     };
-
+    
     ui.submitFoodHistoryBtn.onclick = submitFoodHistory;
     ui.getInsightsBtn.onclick = ask;
     ui.voiceInputBtn.onclick = () => {
         const Rec = window.SpeechRecognition || window.webkitSpeechRecognition;
+        if(!Rec) return alert("Sorry, voice recognition is not supported in your browser.");
         const rec = new Rec();
         rec.onresult = e => { ui.input.value = e.results[0][0].transcript; ask(); };
         rec.start();
@@ -242,8 +202,19 @@ k<!DOCTYPE html>
     ui.logoutButton.onclick = () => signOut(auth);
 
     onAuthStateChanged(auth, user => {
-        if (user) handleLogin(user);
-        else signInWithPopup(auth, new GoogleAuthProvider());
+        if (user) {
+            handleLogin(user);
+        } else {
+            ui.sidebar.style.display = 'none';
+            ui.foodHistorySection.style.display = 'none';
+            ui.appSection.style.display = 'none';
+            signInWithPopup(auth, new GoogleAuthProvider()).catch(error => {
+                if (error.code !== 'auth/popup-closed-by-user') {
+                    console.error("Google Sign-in error:", error);
+                    document.querySelector('.container').innerHTML = '<h1>Sign In Failed</h1><p>Please refresh the page to try again.</p>';
+                }
+            });
+        }
     });
 </script>
 
