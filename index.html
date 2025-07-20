@@ -1,16 +1,16 @@
-<!DOCTYPE html>
+k<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <title>🩺 MedAssist - Global Health AI</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-
+    
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.5.1/dist/confetti.browser.min.js"></script>
 
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-
+    
     <style>
         body {
             font-family: 'Poppins', sans-serif;
@@ -22,24 +22,25 @@
         }
         .container {
             background: #fff;
+            margin: auto;
             padding: 30px;
             border-radius: 20px;
             box-shadow: 0 8px 30px rgba(0,0,0,0.1);
             width: 50%;
             min-width: 400px;
             max-width: 700px;
-            margin: auto;
             margin-left: 350px; /* Shift right to avoid overlap */
         }
         #sidebar {
             width: 300px;
             background: #f7f7f7;
             padding: 20px;
+            border-right: 1px solid #ddd;
+            box-shadow: 2px 0 5px rgba(0,0,0,0.05);
             display: flex;
             flex-direction: column;
             position: absolute;
             height: 100%;
-            box-shadow: 2px 0 5px rgba(0,0,0,0.05);
         }
         .history-item {
             display: flex; justify-content: space-between; align-items: center;
@@ -68,7 +69,7 @@
 </head>
 <body>
 
-<div id="sidebar">
+<div id="sidebar" style="display:none;">
     <h3><i class="fa-solid fa-clock-rotate-left"></i> History</h3>
     <div id="history">Your previous queries will appear here.</div>
     <hr>
@@ -79,7 +80,7 @@
 <div class="container">
     <h1><i class="fa-solid fa-heart-pulse"></i> MedAssist</h1>
 
-    <div id="foodHistorySection">
+    <div id="foodHistorySection" style="display:none;">
         <h3>Welcome! Please enter your recent food history to begin.</h3>
         <textarea id="foodHistoryInput" placeholder="e.g., I had salad for lunch, pasta for dinner..."></textarea>
         <button id="submitFoodHistory">Calculate Health Score</button>
@@ -147,10 +148,7 @@
 
     const updateHistory = (h) => {
         ui.history.innerHTML = "";
-        if (!h || h.length === 0) {
-            ui.history.innerHTML = "No history yet.";
-            return;
-        }
+        if (!h || h.length === 0) { ui.history.innerHTML = "No history yet."; return; }
         const unique = [...new Map(h.filter(i => i.role === 'user').map(i => [i.content, i])).values()];
         unique.slice(-5).reverse().forEach(item => {
             const div = document.createElement('div');
@@ -165,27 +163,27 @@
     const handleLogin = async (user) => {
         userUID = user.uid;
         ui.userDisplay.innerText = user.email;
+        ui.sidebar.style.display = 'flex';
         currentIdToken = await user.getIdToken();
         try {
             const res = await fetch(`${BACKEND_URL}/user/profile`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json", "Authorization": `Bearer ${currentIdToken}` },
+                method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${currentIdToken}` },
                 body: JSON.stringify({ uid: userUID })
             });
             const data = await res.json();
             if (data.health_score != null) {
-                ui.foodHistorySection.style.display = 'none';
-                ui.appSection.style.display = 'block';
                 ui.healthScore.innerHTML = `<b>Your Health Score: ${data.health_score}/100</b><br>${marked.parse(data.message || '')}`;
                 if (data.health_score >= 80) confetti({ particleCount: 150, spread: 90, origin: { y: 0.6 } });
                 updateHistory(data.chat_history || []);
+                ui.foodHistorySection.style.display = 'none';
+                ui.appSection.style.display = 'block';
             } else {
                 ui.foodHistorySection.style.display = 'block';
                 ui.appSection.style.display = 'none';
             }
         } catch (error) {
-            console.error("Error fetching profile:", error);
-            alert("Error loading profile. Try again.");
+            console.error("Profile fetch failed:", error);
+            alert("Error loading profile. Try refreshing.");
         }
     };
 
@@ -193,16 +191,19 @@
         const history = ui.foodHistoryInput.value.trim();
         if (!history) return alert("Please enter your food history.");
         ui.submitFoodHistoryBtn.disabled = true;
+        ui.submitFoodHistoryBtn.textContent = "Calculating...";
         try {
-            await fetch(`${BACKEND_URL}/user/food-history`, {
+            const response = await fetch(`${BACKEND_URL}/user/food-history`, {
                 method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${currentIdToken}` },
                 body: JSON.stringify({ food_history: history })
             });
+            if (!response.ok) throw new Error((await response.json()).detail || "Failed to calculate health score.");
             await handleLogin(auth.currentUser);
         } catch (error) {
-            alert("Error submitting food history.");
+            alert("Error submitting food history: " + error.message);
         } finally {
             ui.submitFoodHistoryBtn.disabled = false;
+            ui.submitFoodHistoryBtn.textContent = "Calculate Health Score";
         }
     };
 
